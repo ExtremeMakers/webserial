@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Exemplo de Web Serial API</title>
+    <!-- Inclua os links para os arquivos Chartist.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/chartist.js/latest/chartist.min.css">
+    <script src="https://cdn.jsdelivr.net/chartist.js/latest/chartist.min.js"></script>
+  </head>
+  <body>
+    <div id="chart"></div>
+    <button id="connectButton">Conectar</button>
+    <span id="status"></span>
+    <textarea id="receivedValue" rows="5" cols="50" disabled></textarea>
+
+    <script>
+      let port;
+      let isConnected = false;
+      let chart;
+      let chartData = [];
+
+      async function connectSerial() {
+        try {
+          port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 9600 });
+          isConnected = true;
+          updateStatus();
+          readSerial(port);
+        } catch (error) {
+          console.error('Erro ao conectar à porta serial:', error);
+        }
+      }
+
+      async function disconnectSerial() {
+        try {
+          await port.close();
+          isConnected = false;
+          updateStatus();
+        } catch (error) {
+          console.error('Erro ao desconectar da porta serial:', error);
+        }
+      }
+
+      async function readSerial(port) {
+        const reader = port.readable.getReader();
+
+        while (isConnected) {
+          try {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+            const data = new TextDecoder().decode(value).trim();
+            const timestamp = new Date();
+
+            // Adicionar o valor recebido ao array de dados do gráfico
+            chartData.push({ x: timestamp, y: Number(data) });
+
+            // Limitar a quantidade de dados mostrados no gráfico
+            if (chartData.length > 20) {
+              chartData.shift();
+            }
+
+            // Atualizar o gráfico
+            updateChart();
+
+            // Exibir o valor recebido no textarea
+            const receivedValueTextarea = document.getElementById('receivedValue');
+            receivedValueTextarea.value += `${data} `;
+            receivedValueTextarea.scrollTop = receivedValueTextarea.scrollHeight;
+
+          } catch (error) {
+            console.error('Erro na leitura da porta serial:', error);
+          }
+        }
+
+        reader.releaseLock();
+        port.close();
+      }
+
+      function updateStatus() {
+        const statusElement = document.getElementById('status');
+        if (isConnected) {
+          statusElement.textContent = 'Conectado à porta serial';
+        } else {
+          statusElement.textContent = 'Desconectado da porta serial';
+        }
+      }
+
+      function formatTimestamp(timestamp) {
+        const hours = String(timestamp.getHours()).padStart(2, '0');
+        const minutes = String(timestamp.getMinutes()).padStart(2, '0');
+        const seconds = String(timestamp.getSeconds()).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+      }
+
+      function updateChart() {
+        if (chart) {
+          chart.update({ series: [chartData] });
+        } else {
+          chart = new Chartist.Line('#chart', { series: [chartData] }, {
+            showPoint: false,
+            axisX: {
+              type: Chartist.FixedScaleAxis,
+              divisor: 5,
+              labelInterpolationFnc: function(value) {
+                const timestamp = new Date(value);
+                return formatTimestamp(timestamp);
+              },
+            },
+          });
+        }
+      }
+
+      function toggleConnection() {
+        if (isConnected) {
+          disconnectSerial();
+        } else {
+          connectSerial();
+        }
+      }
+
+      document.getElementById('connectButton').addEventListener('click', toggleConnection);
+    </script>
+  </body>
+</html>
